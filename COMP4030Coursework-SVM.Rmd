@@ -1,0 +1,161 @@
+---
+title: "COMP4030Coursework"
+output: pdf_document
+date: '2022-04-12'
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setwd}
+
+setwd('C:/Users/Joel/OneDrive/Data Modelling Coursework')
+
+```
+
+```{r installs}
+install.packages("ggplot2")
+install.packages("e1071") #SVM
+install.packages("factoextra")
+install.packages("caret")
+install.packages("gmodels")
+install.packages("pracma")
+install.packages("GGally")
+```
+```{r libraries}
+
+library(ggplot2)
+library(e1071)
+library(factoextra)
+library(caret)
+library(dplyr)
+library(gmodels)
+library(pracma)
+library(GGally)
+source("analysisFunctions.R")
+```
+
+```{r readData}
+
+wine <- read.csv(file = "wine.csv", header=FALSE)
+colnames(wine) <- c("Class", "Alcohol","Malic_Acid", "Ash", "Alcalinity_of_ash", "Magnesium", "Total_phenols", "Flavanoids", "Nonflavanoid_phenols", "Proanthocyanins", "Color_intensity", "Hue", "OD280_315", "Proline")
+```
+
+```{r normalisation}
+
+wine.stand <- as.data.frame(scale(wine[,2:14]))
+
+wine$Class <- as.factor(wine$Class)
+
+wine.stand$Class = as.factor(wine$Class)
+
+wine.stand
+```
+
+```{r exploration}
+
+head(wine)
+summ <- summary(wine)
+
+
+names <- c("Class", "Alcohol","Malic_Acid", "Ash", "Alcalinity_of_ash", "Magnesium", "Total_phenols", "Flavanoids", "Nonflavanoid_phenols", "Proanthocyanins", "Color_intensity", "Hue", "OD280_315", "Proline")
+
+means <- c(mean(wine$Class), mean(wine$Alcohol), mean(wine$Malic_Acid), mean(wine$Ash), mean(wine$Alcalinity_of_ash), mean(wine$Magnesium), mean(wine$Total_phenols), mean(wine$Flavanoids), mean(wine$Nonflavanoid_phenols), mean(wine$Proanthocyanins), mean(wine$Color_intensity), mean(wine$Hue), mean(wine$OD280_315), mean(wine$Proline))
+  
+sds <- c(sd(wine$Class), sd(wine$Alcohol), sd(wine$Malic_Acid), sd(wine$Ash), sd(wine$Alcalinity_of_ash), sd(wine$Magnesium), sd(wine$Total_phenols), sd(wine$Flavanoids), sd(wine$Nonflavanoid_phenols), sd(wine$Proanthocyanins), sd(wine$Color_intensity), sd(wine$Hue), sd(wine$OD280_315), sd(wine$Proline))
+
+df <- data.frame(names, means, sds)
+
+colnames(df) <- c("Features", "Mean", "Standard Deviation")
+
+ggplot(df) + geom_bar(aes(x=Features, y=Mean)) 
+
+#plot by color/intensity
+#ggplot(wine.stand) + geom_point(aes(x=Hue, y=Color_intensity, color=Class))
+```
+
+```{r full}
+
+fullData <- hyperParam(wine.stand)
+colnames(fullData) <- c("kernel", "gamma", "c", "Accuracy")
+fullData
+
+fullDataCV <- crossv(wine.stand, "polynomial", 10, 0.1)
+fullDataCV
+
+```
+
+```{r manualFeatureSelection}
+
+ggpairs(wine[1:14], mapping=ggplot2::aes(colour=Class))
+
+# Proline/OB280-350 look the most easily separable
+
+dfMan <- select(wine.stand, Class, Proline, OD280_315)
+manData <- hyperParam(dfMan)
+colnames(manData) <- c("kernel", "gamma", "c", "Accuracy")
+manData
+
+manFeatCV <- crossv(wine.stand, "linear", 0.1, 0.001)
+manFeatCV
+
+```
+
+
+```{r pcaFull}
+
+#Range is large therefore PCA useful
+range(sapply(wine[2:14], var))
+
+
+winePca <- prcomp(wine.stand[1:13])
+
+screeplot(winePca, type="lines",col=3, main="Variance explained by PC")
+
+biplot(winePca, cex=0.8)
+
+new_wine = predict(winePca, wine.stand[,1:13])[,1:4]
+
+#Create Dataframe
+df <- data.frame(PC1=double(),PC2=double(),PC3=double(),PC4=double(), stringsAsFactors = FALSE)
+
+for(i in seq(1, (length(new_wine)/4), 1)){
+  newRow = new_wine[i,]
+  df <- rbind(df, newRow)
+}
+
+
+df$Class <- as.factor(wine$Class)
+colnames(df) <- c("PC1", "PC2", "PC3", "PC4", "Class")
+
+pca <- hyperParam(df)
+colnames(pca) <- c("kernel", "gamma", "c", "Accuracy")
+
+pca
+
+```
+
+
+```{r svm}
+
+index = createDataPartition(wine.stand$Class, p=0.6, list=FALSE)
+test = wine.stand[-index,]
+train = wine.stand[index,]
+
+svmfit = svm(Class~., data=train, kernel="polynomial", cost=100, gamma=100, scale=FALSE)
+
+plot(svmfit, test, Hue~Color_intensity)
+
+
+pred=predict(svmfit, test[,-14], type="Class")
+
+
+CrossTable(pred,test[,14],prop.c = FALSE,prop.r = FALSE,prop.t = FALSE,prop.chisq = FALSE,dnn=c("predicted Y","True Y"))
+
+cat("SVM Accuracy = ", 100*mean(pred==test[,14]),"%")
+
+```
+
